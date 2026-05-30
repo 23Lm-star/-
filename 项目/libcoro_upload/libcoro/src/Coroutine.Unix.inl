@@ -1,7 +1,0 @@
-
-namespace coro {
-
-void registerSignalHandlers() {
-}
-
-}
