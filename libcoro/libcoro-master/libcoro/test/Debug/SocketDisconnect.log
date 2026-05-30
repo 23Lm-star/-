@@ -1,0 +1,3 @@
+﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(538,5): warning MSB8028: 中间目录(Debug\)包含从另一个项目(Basic.vcxproj, Event.vcxproj, Join.vcxproj, Selector.vcxproj, Socket.vcxproj, Ssl.vcxproj, Stack.vcxproj)共享的文件。   这会导致错误的清除和重新生成行为。
+  SocketDisconnect.cpp
+C:\Users\王晨扬\Downloads\libcoro-master\libcoro-master\libcoro\test\SocketDisconnect.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\王晨扬\Downloads\libcoro-master\libcoro-master\libcoro\test\Debug\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS

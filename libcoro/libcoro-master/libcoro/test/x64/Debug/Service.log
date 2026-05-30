@@ -1,0 +1,5 @@
+﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(538,5): warning MSB8028: 中间目录(x64\Debug\)包含从另一个项目(Basic.vcxproj, Event.vcxproj, Join.vcxproj, MySqlTest.vcxproj, Selector.vcxproj, Socket.vcxproj, SocketDisconnect.vcxproj, Ssl.vcxproj, Stack.vcxproj)共享的文件。   这会导致错误的清除和重新生成行为。
+  Service.cpp
+\Service.cpp(1,1): error C1083: 无法打开源文件: “Service.cpp”: No such file or directory
+  (编译源文件“/Service.cpp”)
+  

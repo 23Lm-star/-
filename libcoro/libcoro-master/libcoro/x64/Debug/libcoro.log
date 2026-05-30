@@ -1,0 +1,28 @@
+﻿  Assembling src\Coroutine.Intel32.s...
+src\Coroutine.Intel32.s(26): error A2008: syntax error : .
+src\Coroutine.Intel32.s(27): error A2008: syntax error : .
+src\Coroutine.Intel32.s(50): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(51): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(52): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(53): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(54): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(55): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(56): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(58): error A2008: syntax error : fs
+src\Coroutine.Intel32.s(59): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(60): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(61): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(62): error A2008: syntax error : fs
+src\Coroutine.Intel32.s(68): error A2008: syntax error : fs
+src\Coroutine.Intel32.s(69): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(70): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(71): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(72): error A2008: syntax error : fs
+src\Coroutine.Intel32.s(75): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(76): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(77): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(78): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(79): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(80): error A2070: invalid instruction operands
+src\Coroutine.Intel32.s(81): error A2070: invalid instruction operands
+C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\BuildCustomizations\masm.targets(70,5): error MSB3721: 命令“ml64.exe /c /nologo /Zi /Fo"x64\Debug\Coroutine.Intel32.obj" /W3 /errorReport:prompt  /Tasrc\Coroutine.Intel32.s”已退出，返回代码为 1。

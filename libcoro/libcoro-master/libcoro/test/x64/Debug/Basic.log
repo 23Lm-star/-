@@ -1,0 +1,12 @@
+﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(538,5): warning MSB8028: 中间目录(x64\Debug\)包含从另一个项目(Event.vcxproj, Join.vcxproj, MySqlTest.vcxproj, Selector.vcxproj, Service.vcxproj, Socket.vcxproj, SocketDisconnect.vcxproj, Ssl.vcxproj, Stack.vcxproj)共享的文件。   这会导致错误的清除和重新生成行为。
+  Basic.cpp
+Basic.obj : error LNK2019: 无法解析的外部符号 "void __cdecl coro::yield(void)" (?yield@coro@@YAXXZ)，函数 "void __cdecl foo(void)" (?foo@@YAXXZ) 中引用了该符号
+Basic.obj : error LNK2019: 无法解析的外部符号 "void __cdecl coro::sleep(class coro::Time const &)" (?sleep@coro@@YAXAEBVTime@1@@Z)，函数 "void __cdecl bar(void)" (?bar@@YAXXZ) 中引用了该符号
+Basic.obj : error LNK2019: 无法解析的外部符号 "public: __cdecl coro::Stack::Stack(unsigned int)" (??0Stack@coro@@QEAA@I@Z)，函数 "public: __cdecl coro::Coroutine::Coroutine<void (__cdecl*)(void)>(void (__cdecl*)(void))" (??$?0P6AXXZ@Coroutine@coro@@QEAA@P6AXXZ@Z) 中引用了该符号
+Basic.obj : error LNK2019: 无法解析的外部符号 "public: __cdecl coro::Stack::~Stack(void)" (??1Stack@coro@@QEAA@XZ)，函数 "int `public: __cdecl coro::Coroutine::Coroutine<void (__cdecl*)(void)>(void (__cdecl*)(void))'::`1'::dtor$2" (?dtor$2@?0???$?0P6AXXZ@Coroutine@coro@@QEAA@P6AXXZ@Z@4HA) 中引用了该符号
+Basic.obj : error LNK2019: 无法解析的外部符号 "public: __cdecl coro::Coroutine::~Coroutine(void)" (??1Coroutine@coro@@QEAA@XZ)，函数 "public: void * __cdecl coro::Coroutine::`scalar deleting destructor'(unsigned int)" (??_GCoroutine@coro@@QEAAPEAXI@Z) 中引用了该符号
+Basic.obj : error LNK2019: 无法解析的外部符号 "private: void __cdecl coro::Coroutine::init(class std::function<void __cdecl(void)> const &)" (?init@Coroutine@coro@@AEAAXAEBV?$function@$$A6AXXZ@std@@@Z)，函数 "public: __cdecl coro::Coroutine::Coroutine<void (__cdecl*)(void)>(void (__cdecl*)(void))" (??$?0P6AXXZ@Coroutine@coro@@QEAA@P6AXXZ@Z) 中引用了该符号
+Basic.obj : error LNK2019: 无法解析的外部符号 "class std::shared_ptr<class coro::Hub> __cdecl coro::hub(void)" (?hub@coro@@YA?AV?$shared_ptr@VHub@coro@@@std@@XZ)，函数 "class std::shared_ptr<class coro::Coroutine> __cdecl coro::start<void (__cdecl*)(void)>(void (__cdecl*)(void))" (??$start@P6AXXZ@coro@@YA?AV?$shared_ptr@VCoroutine@coro@@@std@@P6AXXZ@Z) 中引用了该符号
+Basic.obj : error LNK2019: 无法解析的外部符号 "void __cdecl coro::run(void)" (?run@coro@@YAXXZ)，函数 main 中引用了该符号
+C:\Users\王晨扬\Desktop\libcoro-master\libcoro-master\Debug\\libcoro.lib : warning LNK4272: 库计算机类型“x86”与目标计算机类型“x64”冲突
+C:\Users\王晨扬\Desktop\libcoro-master\libcoro-master\x64\Debug\Basic.exe : fatal error LNK1120: 8 个无法解析的外部命令
