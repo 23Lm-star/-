@@ -1,6 +1,5 @@
 #include "HttpServer.h"
 #include "../auth/SessionManager.h"
-#include "../auth/AuthHandler.h"
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -191,26 +190,6 @@ void HttpServer::handleClient(int clientSocket) {
             write(clientSocket, response.c_str(), response.size());
             close(clientSocket);
             return;
-        }
-        
-        // 检查是否是监控页面路径，只有超级管理员可以访问
-        if (req.path == "/monitor") {
-            std::string username = Auth::SessionManager::instance().getSessionUser(sessionId);
-            if (!Auth::AuthHandler::isSuperAdmin(username)) {
-                // 不是超级管理员，返回403禁止访问
-                res.statusCode = 403;
-                res.contentType = "text/html; charset=utf-8";
-                res.body = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>权限不足</title>";
-                res.body += "<style>body{font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f5f5f5;}";
-                res.body += ".error-box{text-align:center;padding:40px;background:white;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
-                res.body += "h1{color:#e74c3c;margin-bottom:20px;}p{color:#666;}a{color:#667eea;text-decoration:none;}</style></head>";
-                res.body += "<body><div class='error-box'><h1>🚫 权限不足</h1><p>您没有权限访问监控页面</p>";
-                res.body += "<p><a href='http://172.22.136.134:8080/'>返回首页</a></p></div></body></html>";
-                std::string response = buildResponse(res);
-                write(clientSocket, response.c_str(), response.size());
-                close(clientSocket);
-                return;
-            }
         }
     }
     

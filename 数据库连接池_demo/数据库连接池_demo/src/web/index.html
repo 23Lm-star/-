@@ -137,7 +137,6 @@
             <button class="tab active" onclick="switchTab('mysql')">MySQL</button>
             <button class="tab" onclick="switchTab('redis')">Redis</button>
             <button class="tab" id="users-tab" style="display: none;" onclick="switchTab('users')">👥 用户管理</button>
-            <button class="tab" id="monitor-tab" style="display: none;" onclick="openMonitor()">📊 连接池监控</button>
         </div>
         
         <div class="panel active" id="mysql-panel">
@@ -2509,11 +2508,6 @@
         }
         
         // 获取当前登录用户
-        // 打开监控页面（仅超级管理员可访问）
-        function openMonitor() {
-            window.location.href = 'http://172.22.136.134:8080/monitor';
-        }
-        
         function fetchCurrentUser() {
             fetch('/api/current-user', {
                 credentials: 'include'
@@ -2529,15 +2523,12 @@
                 if (data && data.success && data.user) {
                     document.getElementById('current-user').textContent = '👤 ' + data.user;
                     
-                    // 只有超级管理员才能看到用户管理标签和监控标签
+                    // 只有超级管理员才能看到用户管理标签
                     const usersTab = document.getElementById('users-tab');
-                    const monitorTab = document.getElementById('monitor-tab');
                     if (data.role === 'super_admin') {
                         usersTab.style.display = 'block';
-                        monitorTab.style.display = 'block';
                     } else {
                         usersTab.style.display = 'none';
-                        monitorTab.style.display = 'none';
                         // 如果当前在用户管理页面，切换到MySQL页面
                         if (document.getElementById('users-panel').classList.contains('active')) {
                             switchTab('mysql');
