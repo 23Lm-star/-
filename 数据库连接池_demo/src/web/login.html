@@ -109,26 +109,26 @@
         <h2 id="form-title">🔐 登录</h2>
         
         <!-- 登录表单 -->
-        <div id="login-form">
+        <form id="login-form" onsubmit="login(); return false;">
             <input type="text" id="login-username" placeholder="用户名">
             <input type="password" id="login-password" placeholder="密码">
-            <button onclick="login()">登录</button>
+            <button type="submit">登录</button>
             <div id="login-error" class="error"></div>
             <div class="toggle-link">
                 还没有账号？<a href="#" onclick="showRegisterForm(); return false;">立即注册</a>
             </div>
-        </div>
+        </form>
         
         <!-- 注册表单 -->
-        <div id="register-form" style="display: none;">
+        <form id="register-form" style="display: none;" onsubmit="register(); return false;">
             <input type="text" id="register-username" placeholder="用户名（至少3个字符）">
             <input type="password" id="register-password" placeholder="密码（至少6个字符）">
             <input type="password" id="register-password-confirm" placeholder="确认密码">
-            <button onclick="register()">注册</button>
-            <button class="secondary" onclick="showLoginForm()">返回登录</button>
+            <button type="submit">注册</button>
+            <button type="button" class="secondary" onclick="showLoginForm()">返回登录</button>
             <div id="register-error" class="error"></div>
             <div id="register-success" class="success"></div>
-        </div>
+        </form>
     </div>
 
     <script>
@@ -159,7 +159,7 @@
                 return;
             }
             
-            fetch('http://172.22.136.134:8080/api/login', {
+            fetch(window.location.origin + '/api/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -169,14 +169,31 @@
             })
             .then(function(res) { return res.json(); })
             .then(function(data) {
+                console.log('[LOGIN] API返回数据:', data);
                 if (data.success) {
-                    // 登录成功，跳转到首页
-                    window.location.href = 'http://172.22.136.134:8080/';
+                    console.log('[LOGIN] 登录成功，准备保存用户信息');
+                    // 登录成功，保存用户信息到localStorage
+                    if (data.role) {
+                        console.log('[LOGIN] 保存角色:', data.role);
+                        localStorage.setItem('userRole', data.role);
+                    } else {
+                        console.log('[LOGIN] 警告: API未返回角色信息');
+                    }
+                    if (data.user || username) {
+                        const userToSave = data.user || username;
+                        console.log('[LOGIN] 保存用户名:', userToSave);
+                        localStorage.setItem('currentUser', userToSave);
+                    }
+                    // 跳转到首页
+                    console.log('[LOGIN] 准备跳转到首页');
+                    window.location.href = window.location.origin + '/';
                 } else {
+                    console.log('[LOGIN] 登录失败:', data.message);
                     document.getElementById('login-error').textContent = data.message || '登录失败';
                 }
             })
             .catch(function(err) {
+                console.error('[LOGIN] 网络错误:', err);
                 document.getElementById('login-error').textContent = '网络错误，请稍后重试';
                 console.error('Login error:', err);
             });
@@ -214,7 +231,7 @@
             }
             
             // 发送注册请求
-            fetch('http://172.22.136.134:8080/api/register', {
+            fetch(window.location.origin + '/api/register', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'

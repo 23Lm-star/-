@@ -4,6 +4,10 @@
 
 本项目是一个基于C++11开发的RAII连接池组件，支持MySQL和Redis数据库连接管理。项目提供了三种交互方式：命令行交互式Shell、Web界面操作和Web监控仪表板。
 
+### 🌟 新增功能：集群部署支持
+
+项目现已支持集群部署模式，可以部署多个Web节点实现负载均衡和高可用。
+
 ---
 
 ## 🏗️ 项目架构
@@ -14,7 +18,7 @@
 │   ├── auth/                     # 用户认证模块
 │   │   ├── AuthHandler.h/cpp     # 认证处理器
 │   │   ├── PasswordHash.h/cpp    # 密码哈希工具
-│   │   ├── SessionManager.h/cpp  # 会话管理器
+│   │   ├── SessionManager.h/cpp  # 会话管理器（支持Redis存储）
 │   │   └── UserDBInit.h/cpp      # 用户数据库初始化
 │   ├── interactive/              # 命令行交互模块
 │   │   ├── Command.h/cpp         # 命令基类
@@ -38,9 +42,13 @@
 │   ├── main.cpp                  # 演示程序入口
 │   ├── interactive_main.cpp      # 交互式程序入口
 │   └── web_main.cpp              # Web服务入口
+├── cluster/                      # 集群部署配置
+│   ├── nginx.conf               # Nginx负载均衡配置
+│   ├── start_cluster.sh          # 集群启动脚本
+│   ├── stop_cluster.sh           # 集群停止脚本
+│   └── README.md                 # 集群部署指南
 ├── README.md                     # 项目说明
 └── Makefile                      # 编译配置
-```
 
 ---
 

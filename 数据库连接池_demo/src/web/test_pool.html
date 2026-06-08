@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>连接池压力测试</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header p {
+            color: #888;
+        }
+        
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .panel {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 25px;
+        }
+        
+        .panel h2 {
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #888;
+        }
+        
+        .control-group input,
+        .control-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 1em;
+        }
+        
+        .control-group input:focus,
+        .control-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #888;
+            font-size: 0.9em;
+        }
+        
+        .connection-log {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .log-entry:last-child { border-bottom: none; }
+        
+        .log-time { color: #888; margin-right: 10px; }
+        .log-success { color: #4CAF50; }
+        .log-error { color: #e74c3c; }
+        .log-info { color: #667eea; }
+        
+        .pool-status-panel {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .pool-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        .pool-card.mysql { border-top: 4px solid #4CAF50; }
+        .pool-card.redis { border-top: 4px solid #FF6B35; }
+        
+        .pool-card h3 { margin-bottom: 15px; }
+        
+        .pool-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        
+        .pool-stat {
+            background: rgba(255,255,255,0.05);
+            padding: 12px;
+            border-radius: 8px;
+        }
+        
+        .pool-stat .label { color: #888; font-size: 0.8em; margin-bottom: 5px; }
+        .pool-stat .value { font-size: 1.5em; font-weight: bold; }
+        
+        /* 进度条样式 */
+        .progress-container {
+            margin-top: 15px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            padding-left: 10px;
+            box-sizing: border-box;
+        }
+        
+        .progress-text {
+            color: white;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.8em;
+            color: #888;
+        }
+        
+        .chart-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .chart-container h3 { margin-bottom: 15px; color: #667eea; }
+        
+        .chart-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            height: 200px;
+        }
+        
+        .chart-bar {
+            flex: 1;
+            background: linear-gradient(180deg, #667eea, #764ba2);
+            border-radius: 5px 5px 0 0;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 5px;
+            font-size: 0.8em;
+            transition: height 0.3s;
+        }
+        
+        .chart-bar-label {
+            color: #888;
+            font-size: 0.8em;
+            margin-top: 5px;
+        }
+        
+        .chart-row {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+        
+        @media (max-width: 900px) {
+            .content { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .pool-status-panel { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 连接池压力测试工具</h1>
+            <p>通过模拟并发请求观察连接池连接数变化</p>
+        </div>
+        
+        <div class="content">
+            <div class="panel">
+                <h2>⚙️ 测试配置</h2>
+                
+                <div class="control-group">
+                    <label>测试类型</label>
+                    <select id="testType">
+                        <option value="mysql">MySQL 连接池</option>
+                        <option value="redis">Redis 连接池</option>
+                        <option value="both">同时测试 MySQL + Redis</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>并发请求数</label>
+                    <input type="number" id="concurrency" value="50" min="1" max="500">
+                </div>
+                
+                <div class="control-group">
+                    <label>总请求数</label>
+                    <input type="number" id="totalRequests" value="5000" min="1" max="50000">
+                </div>
+                
+                <div class="control-group">
+                    <label>单请求保持时间 (毫秒)</label>
+                    <input type="number" id="duration" value="500" min="100" max="10000">
+                </div>
+                
+                <div class="control-group">
+                    <label>请求间隔 (毫秒)</label>
+                    <input type="number" id="requestInterval" value="0" min="0" max="1000">
+                </div>
+                
+                <div class="control-group">
+                    <label>自动填充多标签页配置</label>
+                    <button class="btn btn-secondary" onclick="fillMultiTabConfig()">📋 填充4标签页配置</button>
+                </div>
+                
+                <div class="control-group">
+                    <label>状态刷新间隔 (毫秒)</label>
+                    <input type="number" id="refreshInterval" value="500" min="100" max="5000">
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn btn-primary" id="startBtn" onclick="startStressTest()">🚀 开始压力测试</button>
+                    <button class="btn btn-danger" id="stopBtn" onclick="stopStressTest()" disabled>⏹️ 停止测试</button>
+                    <button class="btn btn-secondary" onclick="refreshPoolStatus()">🔄 刷新状态</button>
+                    <button class="btn btn-secondary" onclick="clearLog()">🗑️ 清空日志</button>
+                </div>
+                
+                <!-- 测试进度条 -->
+                <div class="progress-container" id="progressContainer" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill">
+                            <span class="progress-text" id="progressText">0%</span>
+                        </div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progressCurrent">0 / 0</span>
+                        <span id="progressRate">0 req/s</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>📊 测试统计</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="test-count">0</div>
+                        <div class="stat-label">测试次数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="max-active">0</div>
+                        <div class="stat-label">最大活跃连接</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="max-total">0</div>
+                        <div class="stat-label">最大总连接</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="last-duration">0ms</div>
+                        <div class="stat-label">最后测试耗时</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="pool-status-panel">
+            <div class="pool-card mysql">
+                <h3>🗄️ MySQL 连接池状态</h3>
+                <div class="pool-stats">
+                    <div class="pool-stat">
+                        <div class="label">活跃连接</div>
+                        <div class="value" id="mysql-active">0</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="label">空闲连接</div>
+                        <div class="value" id="mysql-idle">0</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="label">总连接</div>
+                        <div class="value" id="mysql-total">0</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="label">最大连接</div>
+                        <div class="value" id="mysql-max">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pool-card redis">
+                <h3>📡 Redis 连接池状态</h3>
+                <div class="pool-stats">
+                    <div class="pool-stat">
+                        <div class="label">活跃连接</div>
+                        <div class="value" id="redis-active">0</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="label">空闲连接</div>
+                        <div class="value" id="redis-idle">0</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="label">总连接</div>
+                        <div class="value" id="redis-total">0</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="label">最大连接</div>
+                        <div class="value" id="redis-max">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <h3>📈 连接数变化历史</h3>
+            <div class="chart-bars" id="chart-bars"></div>
+            <div class="chart-row" id="chart-labels" style="display: flex; gap: 10px; margin-top: 5px;"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>📝 实时日志</h2>
+            <div class="connection-log" id="connection-log"></div>
+        </div>
+    </div>
+    
+    <script>
+        let isRunning = false;
+        let testCount = 0;
+        let maxActiveConnections = 0;
+        let maxTotalConnections = 0;
+        let refreshTimer = null;
+        let chartHistory = [];
+        let abortController = null;
+        
+        function logMessage(message, type = 'info') {
+            const logContainer = document.getElementById('connection-log');
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-CN');
+            
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">[${timeStr}]</span><span class="log-${type}">${message}</span>`;
+            
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('connection-log').innerHTML = '';
+        }
+        
+        async function refreshPoolStatus() {
+            const status = await fetchPoolStatus();
+            updateChart(status);
+        }
+        
+        async function fetchPoolStatus() {
+            try {
+                const response = await fetch('/api/cluster/poolStatus', { credentials: 'include' });
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.success && data.nodes) {
+                        let mysqlActive = 0, mysqlIdle = 0, mysqlTotal = 0, mysqlMax = 0;
+                        let redisActive = 0, redisIdle = 0, redisTotal = 0, redisMax = 0;
+                        
+                        const nodeValues = Object.values(data.nodes);
+                        for (const node of nodeValues) {
+                            if (node) {
+                                mysqlActive += node.mysql_active || 0;
+                                mysqlIdle += node.mysql_idle || 0;
+                                mysqlTotal += node.mysql_total || 0;
+                                mysqlMax = Math.max(mysqlMax, node.mysql_maxActive || 0);
+                                
+                                redisActive += node.redis_active || 0;
+                                redisIdle += node.redis_idle || 0;
+                                redisTotal += node.redis_total || 0;
+                                redisMax = Math.max(redisMax, node.redis_maxActive || 0);
+                            }
+                        }
+                        
+                        document.getElementById('mysql-active').textContent = mysqlActive;
+                        document.getElementById('mysql-idle').textContent = mysqlIdle;
+                        document.getElementById('mysql-total').textContent = mysqlTotal;
+                        document.getElementById('mysql-max').textContent = mysqlMax;
+                        
+                        document.getElementById('redis-active').textContent = redisActive;
+                        document.getElementById('redis-idle').textContent = redisIdle;
+                        document.getElementById('redis-total').textContent = redisTotal;
+                        document.getElementById('redis-max').textContent = redisMax;
+                        
+                        maxActiveConnections = Math.max(maxActiveConnections, mysqlActive + redisActive);
+                        maxTotalConnections = Math.max(maxTotalConnections, mysqlTotal + redisTotal);
+                        
+                        document.getElementById('max-active').textContent = maxActiveConnections;
+                        document.getElementById('max-total').textContent = maxTotalConnections;
+                        
+                        return { mysqlActive, mysqlIdle, mysqlTotal, redisActive, redisIdle, redisTotal };
+                    }
+                }
+            } catch (err) {
+                logMessage(`❌ 获取连接池状态失败: ${err.message}`, 'error');
+            }
+            return null;
+        }
+        
+        function updateChart(status) {
+            if (!status) return;
+            
+            chartHistory.push(status.mysqlTotal);
+            if (chartHistory.length > 20) {
+                chartHistory.shift();
+            }
+            
+            const chartBars = document.getElementById('chart-bars');
+            const chartLabels = document.getElementById('chart-labels');
+            
+            chartBars.innerHTML = '';
+            chartLabels.innerHTML = '';
+            
+            const maxVal = Math.max(...chartHistory, 1);
+            
+            for (let i = 0; i < chartHistory.length; i++) {
+                const val = chartHistory[i];
+                const height = Math.max((val / maxVal) * 100, 5);
+                
+                const barRow = document.createElement('div');
+                barRow.className = 'chart-row';
+                
+                const bar = document.createElement('div');
+                bar.className = 'chart-bar';
+                bar.style.height = height + '%';
+                bar.textContent = val;
+                
+                const label = document.createElement('div');
+                label.className = 'chart-bar-label';
+                label.textContent = i;
+                
+                barRow.appendChild(bar);
+                chartBars.appendChild(barRow);
+            }
+        }
+        
+        function stopStressTest() {
+            if (!isRunning) return;
+            
+            logMessage('⏹️ 用户请求停止测试', 'info');
+            
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
+            }
+            
+            isRunning = false;
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            startBtn.disabled = false;
+            startBtn.textContent = '🚀 开始压力测试';
+            stopBtn.disabled = true;
+            
+            clearInterval(refreshTimer);
+        }
+        
+        async function startStressTest() {
+            if (isRunning) {
+                alert('测试正在进行中');
+                return;
+            }
+            
+            isRunning = true;
+            abortController = new AbortController();
+            
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            startBtn.disabled = true;
+            startBtn.textContent = '⏳ 测试中...';
+            stopBtn.disabled = false;
+            
+            const testType = document.getElementById('testType').value;
+            const concurrency = parseInt(document.getElementById('concurrency').value) || 10;
+            const totalRequests = parseInt(document.getElementById('totalRequests').value) || 100;
+            const duration = parseInt(document.getElementById('duration').value) || 500;
+            const requestInterval = parseInt(document.getElementById('requestInterval').value) || 50;
+            const startTime = Date.now();
+            
+            let testTypeDesc = '';
+            if (testType === 'mysql') testTypeDesc = 'MySQL连接池';
+            else if (testType === 'redis') testTypeDesc = 'Redis连接池';
+            else testTypeDesc = 'MySQL + Redis连接池';
+            
+            logMessage(`🚀 开始压力测试 (Nginx负载均衡):`, 'info');
+            logMessage(`   测试类型: ${testTypeDesc}`, 'info');
+            logMessage(`   并发请求数: ${concurrency}`, 'info');
+            logMessage(`   总请求数: ${totalRequests}`, 'info');
+            logMessage(`   单请求保持: ${duration}ms`, 'info');
+            logMessage(`   请求间隔: ${requestInterval}ms`, 'info');
+            
+            testCount++;
+            document.getElementById('test-count').textContent = testCount;
+            
+            if (refreshTimer) clearInterval(refreshTimer);
+            refreshTimer = setInterval(fetchPoolStatus, parseInt(document.getElementById('refreshInterval').value));
+            
+            const initialStatus = await fetchPoolStatus();
+            if (initialStatus) {
+                logMessage(`📊 初始状态:`, 'info');
+                logMessage(`   MySQL: 活跃=${initialStatus.mysqlActive}, 空闲=${initialStatus.mysqlIdle}, 总计=${initialStatus.mysqlTotal}`, 'info');
+                logMessage(`   Redis: 活跃=${initialStatus.redisActive}, 空闲=${initialStatus.redisIdle}, 总计=${initialStatus.redisTotal}`, 'info');
+            }
+            
+            let successCount = 0;
+            let failedCount = 0;
+            let completedRequests = 0;
+            let startTimeMs = Date.now();
+            let lastUpdateTime = startTimeMs;
+            let lastCompletedCount = 0;
+            
+            // 显示进度条
+            document.getElementById('progressContainer').style.display = 'block';
+            
+            // 更新进度条
+            function updateProgress() {
+                const progress = (completedRequests / totalRequests) * 100;
+                const currentTime = Date.now();
+                const elapsedSeconds = (currentTime - lastUpdateTime) / 1000;
+                const completedSinceLast = completedRequests - lastCompletedCount;
+                const rate = elapsedSeconds > 0 ? (completedSinceLast / elapsedSeconds).toFixed(1) : '0';
+                
+                document.getElementById('progressFill').style.width = progress + '%';
+                document.getElementById('progressText').textContent = progress.toFixed(1) + '%';
+                document.getElementById('progressCurrent').textContent = `${completedRequests} / ${totalRequests}`;
+                document.getElementById('progressRate').textContent = `${rate} req/s`;
+                
+                lastUpdateTime = currentTime;
+                lastCompletedCount = completedRequests;
+            }
+            
+            // 单个请求函数 - 直接通过Nginx发送请求
+            async function makeRequest() {
+                try {
+                    let url;
+                    if (testType === 'mysql') {
+                        url = `/api/mysql/tables?delay=${duration}`;
+                    } else if (testType === 'redis') {
+                        url = `/api/redis/get?key=test&delay=${duration}`;
+                    } else {
+                        url = Math.random() > 0.5 ? `/api/mysql/tables?delay=${duration}` : `/api/redis/get?key=test&delay=${duration}`;
+                    }
+                    
+                    // 直接通过Nginx发送请求，由Nginx进行负载均衡
+                    const response = await fetch(url, { 
+                        credentials: 'include',
+                        signal: abortController.signal
+                    });
+                    
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failedCount++;
+                    }
+                    
+                    // 模拟请求保持时间
+                    await new Promise(resolve => setTimeout(resolve, duration));
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        failedCount++;
+                        logMessage(`❌ 请求失败: ${err.message}`, 'error');
+                    }
+                }
+                
+                completedRequests++;
+                updateProgress();
+            }
+            
+            // 并发控制
+            async function runConcurrently() {
+                const workers = [];
+                
+                for (let i = 0; i < concurrency; i++) {
+                    const worker = async () => {
+                        while (completedRequests < totalRequests && isRunning) {
+                            await makeRequest();
+                            if (requestInterval > 0) {
+                                await new Promise(resolve => setTimeout(resolve, requestInterval));
+                            }
+                        }
+                    };
+                    workers.push(worker());
+                }
+                
+                await Promise.all(workers);
+            }
+            
+            try {
+                await runConcurrently();
+                
+                const endTime = Date.now();
+                document.getElementById('last-duration').textContent = (endTime - startTime) + 'ms';
+                
+                logMessage(`✅ 压力测试完成`, 'success');
+                logMessage(`📊 测试结果统计:`, 'info');
+                logMessage(`📈 请求统计:`, 'info');
+                logMessage(`   成功: ${successCount}`, 'success');
+                logMessage(`   失败: ${failedCount}`, failedCount > 0 ? 'error' : 'info');
+                logMessage(`   成功率: ${((successCount / totalRequests) * 100).toFixed(2)}%`, 'info');
+                
+                const finalStatus = await fetchPoolStatus();
+                updateChart(finalStatus);
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    logMessage('⏹️ 测试已被用户停止', 'info');
+                } else {
+                    logMessage(`❌ 压力测试异常: ${err.message}`, 'error');
+                }
+            }
+            
+            isRunning = false;
+            abortController = null;
+            
+            startBtn.disabled = false;
+            startBtn.textContent = '🚀 开始压力测试';
+            stopBtn.disabled = true;
+            
+            // 隐藏进度条
+            document.getElementById('progressContainer').style.display = 'none';
+            
+            clearInterval(refreshTimer);
+            await fetchPoolStatus();
+        }
+        
+        // 填充4标签页配置
+        function fillMultiTabConfig() {
+            // 每个标签页125并发，4个标签页共500并发
+            document.getElementById('concurrency').value = 125;
+            document.getElementById('totalRequests').value = 1250;
+            document.getElementById('duration').value = 500;
+            document.getElementById('requestInterval').value = 0;
+            logMessage('📋 已填充4标签页配置: 125并发 × 1250请求', 'info');
+        }
+        
+        // 页面加载时刷新状态
+        window.onload = () => {
+            fetchPoolStatus();
+            logMessage('✅ 测试工具已就绪', 'success');
+        };
+    </script>
+</body>
+</html>

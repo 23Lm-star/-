@@ -126,7 +126,14 @@ bool HttpServer::isPublicPath(const std::string& path) {
         "/api/logout",
         "/api/current-user",
         "/api/register",
-        "/login.html"
+        "/api/cluster/",
+        "/api/mysql/poolStatus",
+        "/api/redis/poolStatus",
+        "/api/mysql/updatePoolConfig",
+        "/api/redis/updatePoolConfig",
+        "/login.html",
+        "/health",
+        "/test"
     };
     
     for (const auto& publicPath : publicPaths) {
@@ -157,9 +164,49 @@ std::string HttpServer::getCookie(const HttpRequest& req, const std::string& coo
 }
 
 void HttpServer::handleClient(int clientSocket) {
-    char buffer[4096] = {0};
-    int bytesRead = read(clientSocket, buffer, sizeof(buffer));
+    // 使用更大的缓冲区，并循环读取直到收到完整请求
+    std::string requestData;
+    char buffer[8192];
     
+    while (true) {
+        int bytesRead = read(clientSocket, buffer, sizeof(buffer));
+        if (bytesRead <= 0) {
+            if (requestData.empty()) {
+                close(clientSocket);
+                return;
+            }
+            break;
+        }
+        requestData.append(buffer, bytesRead);
+        
+        // 检查是否已收到完整的 HTTP 请求头（以 \r\n\r\n 结尾）
+        size_t headerEnd = requestData.find("\r\n\r\n");
+        if (headerEnd == std::string::npos) {
+            continue;  // 头部未接收完，继续读
+        }
+        
+        // 检查 Content-Length，判断 body 是否接收完整
+        size_t clPos = requestData.find("Content-Length: ");
+        if (clPos != std::string::npos && clPos < headerEnd) {
+            size_t clStart = clPos + 16;
+            size_t clEnd = requestData.find("\r\n", clStart);
+            if (clEnd != std::string::npos) {
+                int contentLength = std::stoi(requestData.substr(clStart, clEnd - clStart));
+                int bodyReceived = (int)requestData.size() - (int)(headerEnd + 4);
+                if (bodyReceived < contentLength) {
+                    continue;  // body 未接收完，继续读
+                }
+            }
+        }
+        break;  // 请求已完整
+    }
+    
+    if (requestData.empty()) {
+        close(clientSocket);
+        return;
+    }
+    
+    // 获取客户端 IP
     sockaddr_in clientAddr;
     socklen_t clientLen = sizeof(clientAddr);
     getpeername(clientSocket, (sockaddr*)&clientAddr, &clientLen);
@@ -167,36 +214,39 @@ void HttpServer::handleClient(int clientSocket) {
     inet_ntop(AF_INET, &clientAddr.sin_addr, ipStr, INET_ADDRSTRLEN);
     std::string clientIP = ipStr;
     
-    if (bytesRead <= 0) {
-        close(clientSocket);
-        return;
-    }
-    
-    std::string request(buffer, bytesRead);
-    HttpRequest req = parseRequest(request);
+    HttpRequest req = parseRequest(requestData);
     req.clientIP = clientIP;
     
     std::string key = req.method + " " + req.path;
     HttpResponse res;
     
+    std::cout << "[DEBUG] Handling request: " << key << ", client: " << clientIP << std::endl;
+    
     // 如果启用了认证，则检查是否为受保护的路径
     if (m_authRequired && !isPublicPath(req.path)) {
         // 验证session_id
         std::string sessionId = getCookie(req, "session_id");
+        std::cout << "[DEBUG] Session ID from cookie: " << sessionId << std::endl;
+        
         if (!Auth::SessionManager::instance().validateSession(sessionId)) {
             // 未登录或会话无效，重定向到登录页
+            std::cout << "[DEBUG] Session invalid, redirecting to login.html" << std::endl;
             res.statusCode = 302;
-            res.headers["Location"] = "http://172.22.136.134:8080/login.html";
+            res.headers["Location"] = "/login.html";
             std::string response = buildResponse(res);
             write(clientSocket, response.c_str(), response.size());
             close(clientSocket);
             return;
         }
         
+        std::cout << "[DEBUG] Session valid" << std::endl;
+        
         // 检查是否是监控页面路径，只有超级管理员可以访问
         if (req.path == "/monitor") {
             std::string username = Auth::SessionManager::instance().getSessionUser(sessionId);
-            if (!Auth::AuthHandler::isSuperAdmin(username)) {
+            std::string role = Auth::SessionManager::instance().getSessionRole(sessionId);
+            std::cout << "[DEBUG] Monitor access check - username: " << username << ", role: " << role << std::endl;
+            if (role != "super_admin") {
                 // 不是超级管理员，返回403禁止访问
                 res.statusCode = 403;
                 res.contentType = "text/html; charset=utf-8";
@@ -205,7 +255,8 @@ void HttpServer::handleClient(int clientSocket) {
                 res.body += ".error-box{text-align:center;padding:40px;background:white;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
                 res.body += "h1{color:#e74c3c;margin-bottom:20px;}p{color:#666;}a{color:#667eea;text-decoration:none;}</style></head>";
                 res.body += "<body><div class='error-box'><h1>🚫 权限不足</h1><p>您没有权限访问监控页面</p>";
-                res.body += "<p><a href='http://172.22.136.134:8080/'>返回首页</a></p></div></body></html>";
+                res.body += "<p>当前角色: " + role + "</p>";
+                res.body += "<p><a href='/'>返回首页</a></p></div></body></html>";
                 std::string response = buildResponse(res);
                 write(clientSocket, response.c_str(), response.size());
                 close(clientSocket);
@@ -229,34 +280,53 @@ void HttpServer::handleClient(int clientSocket) {
 
 HttpRequest HttpServer::parseRequest(const std::string& request) {
     HttpRequest req;
-    std::istringstream iss(request);
+    
+    // 先找出头部结束位置
+    size_t headerEnd = request.find("\r\n\r\n");
+    if (headerEnd == std::string::npos) {
+        headerEnd = request.size();
+    }
+    
+    std::string headerPart = request.substr(0, headerEnd);
+    std::istringstream iss(headerPart);
     std::string line;
     
+    // 解析请求行
     std::getline(iss, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
     std::istringstream firstLine(line);
     firstLine >> req.method >> req.path;
     
-    while (std::getline(iss, line) && line != "\r") {
+    // 解析请求头
+    while (std::getline(iss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty()) break;
         size_t colon = line.find(':');
         if (colon != std::string::npos) {
             std::string key = line.substr(0, colon);
-            std::string value = line.substr(colon + 2);
-            if (value.back() == '\r') value.pop_back();
+            std::string value = line.substr(colon + 1);
+            size_t vstart = value.find_first_not_of(' ');
+            if (vstart != std::string::npos) value = value.substr(vstart);
+            size_t vend = value.find_last_not_of(" \r\n");
+            if (vend != std::string::npos) value = value.substr(0, vend + 1);
             req.headers[key] = value;
         }
     }
     
-    std::getline(iss, line);
-    req.body = line;
+    // 解析 body
+    if (headerEnd + 4 < request.size()) {
+        req.body = request.substr(headerEnd + 4);
+    }
     
+    // 解析 URL 查询参数
     size_t qmark = req.path.find('?');
     if (qmark != std::string::npos) {
         std::string query = req.path.substr(qmark + 1);
         req.path = req.path.substr(0, qmark);
-        
         parseParams(query, req.params);
     }
     
+    // 解析 POST/PUT body 参数
     if ((req.method == "POST" || req.method == "PUT") && !req.body.empty()) {
         parseParams(req.body, req.params);
     }
@@ -279,15 +349,23 @@ void HttpServer::parseParams(const std::string& query, std::unordered_map<std::s
 
 std::string HttpServer::buildResponse(const HttpResponse& response) {
     std::ostringstream oss;
-    oss << "HTTP/1.1 " << response.statusCode << " OK\r\n";
+    // 根据状态码输出正确的状态文本
+    std::string statusText = "OK";
+    if (response.statusCode == 301) statusText = "Moved Permanently";
+    else if (response.statusCode == 302) statusText = "Found";
+    else if (response.statusCode == 400) statusText = "Bad Request";
+    else if (response.statusCode == 401) statusText = "Unauthorized";
+    else if (response.statusCode == 403) statusText = "Forbidden";
+    else if (response.statusCode == 404) statusText = "Not Found";
+    else if (response.statusCode == 500) statusText = "Internal Server Error";
+    
+    oss << "HTTP/1.1 " << response.statusCode << " " << statusText << "\r\n";
     oss << "Content-Type: " << response.contentType << "\r\n";
     oss << "Content-Length: " << response.body.size() << "\r\n";
-    oss << "Access-Control-Allow-Origin: http://172.22.136.134:8080\r\n";
-    oss << "Access-Control-Allow-Credentials: true\r\n";
     oss << "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n";
     oss << "Access-Control-Allow-Headers: Content-Type, Cookie\r\n";
     
-    // 输出自定义响应头（如 Set-Cookie）
+    // 输出自定义响应头（如 Set-Cookie、Location）
     for (const auto& header : response.headers) {
         oss << header.first << ": " << header.second << "\r\n";
     }

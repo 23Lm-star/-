@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <unordered_map>
+#include <vector>
 
 /**
  * @brief Redis连接封装类
@@ -120,6 +121,32 @@ public:
      * @return 检测成功返回true，失败返回false
      */
     bool ping();
+    
+    /**
+     * @brief 添加元素到有序集合
+     * @param key 有序集合键名
+     * @param member 成员
+     * @param score 分数
+     * @return 添加成功返回true，失败返回false
+     */
+    bool zadd(const std::string& key, const std::string& member, double score);
+    
+    /**
+     * @brief 获取有序集合指定范围的成员
+     * @param key 有序集合键名
+     * @param start 开始索引
+     * @param stop 结束索引（-1表示最后一个）
+     * @return 返回成员和分数的向量
+     */
+    std::vector<std::pair<std::string, double>> zrange(const std::string& key, int start, int stop);
+    
+    /**
+     * @brief 从有序集合中移除成员
+     * @param key 有序集合键名
+     * @param member 成员
+     * @return 移除成功返回true，失败返回false
+     */
+    bool zrem(const std::string& key, const std::string& member);
     
     /**
      * @brief 更新最后使用时间

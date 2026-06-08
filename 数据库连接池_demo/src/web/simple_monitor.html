@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>集群监控测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #fff; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+        .ov-card { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; text-align: center; }
+        .ov-card .val { font-size: 2em; font-weight: bold; }
+        .nodes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .node-card { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; border-left: 4px solid #4CAF50; }
+        .node-card.offline { border-left-color: #666; opacity: 0.6; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #4CAF50; display: inline-block; margin-right: 10px; }
+        .status-dot.offline { background: #666; }
+        .stat-row { display: flex; justify-content: space-between; padding: 5px 0; }
+        .progress-bar { height: 8px; background: rgba(255,255,255,0.2); border-radius: 4px; margin: 10px 0; }
+        .progress-fill { height: 100%; background: #4CAF50; border-radius: 4px; }
+        .btn { padding: 10px 20px; background: #667eea; border: none; color: white; border-radius: 5px; cursor: pointer; }
+        .btn:hover { background: #5a6fd6; }
+        .last-update { text-align: center; color: #888; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 集群连接池监控</h1>
+            <button class="btn" onclick="loadData()">刷新数据</button>
+        </div>
+        
+        <div class="overview">
+            <div class="ov-card"><div class="val" id="online">--</div><div>在线节点</div></div>
+            <div class="ov-card"><div class="val" id="offline">--</div><div>离线节点</div></div>
+            <div class="ov-card"><div class="val" id="mysql">--</div><div>MySQL活跃</div></div>
+            <div class="ov-card"><div class="val" id="redis">--</div><div>Redis活跃</div></div>
+        </div>
+        
+        <h2>节点状态</h2>
+        <div class="nodes" id="nodes-container">
+            <div class="node-card" id="n8080"><div><span class="status-dot"></span>节点 8080</div><div id="n8080-content">加载中...</div></div>
+            <div class="node-card" id="n8081"><div><span class="status-dot"></span>节点 8081</div><div id="n8081-content">加载中...</div></div>
+            <div class="node-card" id="n8082"><div><span class="status-dot"></span>节点 8082</div><div id="n8082-content">加载中...</div></div>
+        </div>
+        
+        <div class="last-update" id="last-update">点击刷新获取数据</div>
+    </div>
+    
+    <script>
+        function loadData() {
+            fetch('/api/cluster/poolStatus', { credentials: 'include' })
+            .then(res => res.json())
+            .then(data => {
+                console.log('Received:', data);
+                
+                document.getElementById('online').textContent = data.online_nodes || 0;
+                document.getElementById('offline').textContent = data.offline_nodes || 0;
+                document.getElementById('mysql').textContent = data.total_mysql_active || 0;
+                document.getElementById('redis').textContent = data.total_redis_active || 0;
+                
+                updateNode(8080, data.nodes['8080']);
+                updateNode(8081, data.nodes['8081']);
+                updateNode(8082, data.nodes['8082']);
+                
+                document.getElementById('last-update').textContent = '更新时间: ' + new Date().toLocaleString('zh-CN');
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                alert('加载失败: ' + err.message);
+            });
+        }
+        
+        function updateNode(port, node) {
+            const card = document.getElementById('n' + port);
+            const dot = card.querySelector('.status-dot');
+            const content = document.getElementById('n' + port + '-content');
+            
+            if (node && node.online) {
+                card.className = 'node-card';
+                dot.className = 'status-dot';
+                
+                const mysqlUsage = node.mysql_maxActive > 0 ? Math.round((node.mysql_active / node.mysql_maxActive) * 100) : 0;
+                const redisUsage = node.redis_maxActive > 0 ? Math.round((node.redis_active / node.redis_maxActive) * 100) : 0;
+                
+                content.innerHTML = `
+                    <div style="margin-top: 15px;">
+                        <div style="color: #888; margin-bottom: 10px;">🗄️ MySQL</div>
+                        <div class="stat-row"><span>活跃</span><span>${node.mysql_active}</span></div>
+                        <div class="stat-row"><span>空闲</span><span>${node.mysql_idle}</span></div>
+                        <div class="stat-row"><span>最大</span><span>${node.mysql_maxActive}</span></div>
+                        <div class="progress-bar"><div class="progress-fill" style="width: ${mysqlUsage}%"></div></div>
+                        <div style="text-align: right; color: #888; font-size: 0.8em;">${mysqlUsage}%</div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <div style="color: #888; margin-bottom: 10px;">📡 Redis</div>
+                        <div class="stat-row"><span>活跃</span><span>${node.redis_active}</span></div>
+                        <div class="stat-row"><span>空闲</span><span>${node.redis_idle}</span></div>
+                        <div class="stat-row"><span>最大</span><span>${node.redis_maxActive}</span></div>
+                        <div class="progress-bar"><div class="progress-fill" style="width: ${redisUsage}%"></div></div>
+                        <div style="text-align: right; color: #888; font-size: 0.8em;">${redisUsage}%</div>
+                    </div>
+                    <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2); color: #666; font-size: 0.8em;">
+                        更新: ${node.timestamp || '--'}
+                    </div>
+                `;
+            } else {
+                card.className = 'node-card offline';
+                dot.className = 'status-dot offline';
+                content.innerHTML = '<div style="color: #888;">离线</div>';
+            }
+        }
+        
+        window.onload = loadData;
+    </script>
+</body>
+</html>

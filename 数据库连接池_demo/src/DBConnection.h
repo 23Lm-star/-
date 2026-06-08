@@ -7,6 +7,16 @@
 #include "MysqlConn.h"
 #include "RedisConn.h"
 
+struct PoolStatus {
+    int active;
+    int idle;
+    int total;
+    int maxActive;
+    int minIdle;
+    int maxWaitMs;
+    int idleTimeoutMs;
+};
+
 class DBConnection {
 public:
     static AutoReconnectPtr<MysqlConn> getMysqlConnection() {
@@ -63,14 +73,38 @@ public:
     static int getRedisPoolMaxWaitMs() { return getRedisPool()->getMaxWaitMs(); }
     static int getRedisPoolIdleTimeoutMs() { return getRedisPool()->getIdleTimeoutMs(); }
     
+    static PoolStatus getMysqlPoolStatus() {
+        PoolStatus status;
+        status.active = static_cast<int>(getMysqlPoolActiveCount());
+        status.idle = static_cast<int>(getMysqlPoolIdleCount());
+        status.total = status.active + status.idle;
+        status.maxActive = getMysqlPoolMaxActive();
+        status.minIdle = getMysqlPoolCurrentMinIdle();
+        status.maxWaitMs = getMysqlPoolMaxWaitMs();
+        status.idleTimeoutMs = getMysqlPoolIdleTimeoutMs();
+        return status;
+    }
+    
+    static PoolStatus getRedisPoolStatus() {
+        PoolStatus status;
+        status.active = static_cast<int>(getRedisPoolActiveCount());
+        status.idle = static_cast<int>(getRedisPoolIdleCount());
+        status.total = status.active + status.idle;
+        status.maxActive = getRedisPoolMaxActive();
+        status.minIdle = getRedisPoolCurrentMinIdle();
+        status.maxWaitMs = getRedisPoolMaxWaitMs();
+        status.idleTimeoutMs = getRedisPoolIdleTimeoutMs();
+        return status;
+    }
+    
 private:
     static ConnPool<MysqlConn>* getMysqlPool() {
-        static ConnPool<MysqlConn>* pool = new ConnPool<MysqlConn>(
-            []() { 
-                MysqlConn* conn = new MysqlConn("192.168.232.155", 3306, "root", "123456", "test"); 
-                conn->connect(); 
-                return conn; 
-            },
+            static ConnPool<MysqlConn>* pool = new ConnPool<MysqlConn>(
+                []() { 
+                    MysqlConn* conn = new MysqlConn("192.168.232.160", 3306, "root", "123456", "test"); 
+                    conn->connect(); 
+                    return conn; 
+                },
             [](MysqlConn* conn) { delete conn; },
             [](MysqlConn* conn) { return conn->isValid(); },
             [](MysqlConn* conn) { return conn->ping(); }
@@ -79,15 +113,26 @@ private:
     }
     
     static ConnPool<RedisConn>* getRedisPool() {
-        static ConnPool<RedisConn>* pool = new ConnPool<RedisConn>(
-            []() { 
-                RedisConn* conn = new RedisConn("192.168.232.155", 6379, 3000); 
-                conn->connect(); 
-                return conn; 
-            },
-            [](RedisConn* conn) { delete conn; },
-            [](RedisConn* conn) { return conn->isValid(); },
-            [](RedisConn* conn) { return conn->ping(); }
+            static ConnPool<RedisConn>* pool = new ConnPool<RedisConn>(
+                // createFunc：总是返回连接对象（像MySQL那样）
+                []() -> RedisConn* { 
+                    RedisConn* conn = new RedisConn("192.168.232.160", 6379, 3000); 
+                    conn->connect();  // 连接但不检查结果
+                    return conn;  // 总是返回连接对象
+                },
+                // destroyFunc：销毁连接
+                [](RedisConn* conn) { delete conn; },
+                // validateFunc：只检查isValid()（像MySQL那样）
+                [](RedisConn* conn) -> bool { 
+                    return conn != nullptr && conn->isValid();
+                },
+                // pingFunc：心跳检测，失活时尝试重连
+                [](RedisConn* conn) -> bool { 
+                    if (conn == nullptr) return false;
+                    if (conn->ping()) return true;
+                    // ping 失败则尝试重连一次
+                    return conn->reconnect();
+                }
         );
         return pool;
     }

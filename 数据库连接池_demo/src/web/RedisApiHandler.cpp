@@ -26,6 +26,16 @@ HttpResponse RedisApiHandler::get(const HttpRequest& req) {
             return res;
         }
         
+        // 模拟业务处理延迟（用于压力测试）
+        int delayMs = 0;
+        auto delayIt = req.params.find("delay");
+        if (delayIt != req.params.end()) {
+            delayMs = std::stoi(delayIt->second);
+        }
+        if (delayMs > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+        }
+        
         std::string value = conn->get(it->second);
         
         res.contentType = "application/json";
@@ -390,6 +400,106 @@ HttpResponse RedisApiHandler::updatePoolConfig(const HttpRequest& req) {
     } catch (...) {
         res.statusCode = 500;
         res.body = "{\"success\": false, \"message\": \"配置更新失败\"}";
+    }
+    
+    return res;
+}
+
+HttpResponse RedisApiHandler::stressTest(const HttpRequest& req) {
+    HttpResponse res;
+    res.contentType = "application/json";
+    
+    try {
+        int duration = 500;
+        int concurrency = 10;
+        int totalRequests = 100;
+        int requestInterval = 50;
+        
+        auto durationIt = req.params.find("duration");
+        auto concurrencyIt = req.params.find("concurrency");
+        auto totalRequestsIt = req.params.find("totalRequests");
+        auto intervalIt = req.params.find("interval");
+        
+        if (durationIt != req.params.end()) {
+            duration = std::stoi(durationIt->second);
+        }
+        if (concurrencyIt != req.params.end()) {
+            concurrency = std::stoi(concurrencyIt->second);
+        }
+        if (totalRequestsIt != req.params.end()) {
+            totalRequests = std::stoi(totalRequestsIt->second);
+        }
+        if (intervalIt != req.params.end()) {
+            requestInterval = std::stoi(intervalIt->second);
+        }
+        
+        size_t activeBefore = DBConnection::getRedisPoolActiveCount();
+        size_t idleBefore = DBConnection::getRedisPoolIdleCount();
+        
+        std::vector<std::thread> threads;
+        std::atomic<int> successCount{0};
+        std::atomic<int> failCount{0};
+        std::atomic<int> requestCount{0};
+        
+        for (int i = 0; i < concurrency && requestCount < totalRequests; ++i) {
+            threads.emplace_back([&]() {
+                while (requestCount < totalRequests) {
+                    int reqNum = ++requestCount;
+                    if (reqNum > totalRequests) break;
+                    
+                    try {
+                        auto conn = DBConnection::getRedisConnection();
+                        if (conn.isValid()) {
+                            if (conn->ping()) {
+                                successCount++;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(duration));
+                            } else {
+                                failCount++;
+                            }
+                        } else {
+                            failCount++;
+                        }
+                    } catch (const std::exception& e) {
+                        failCount++;
+                    }
+                    
+                    if (requestInterval > 0 && requestCount < totalRequests) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(requestInterval));
+                    }
+                }
+            });
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        size_t activeDuring = DBConnection::getRedisPoolActiveCount();
+        size_t idleDuring = DBConnection::getRedisPoolIdleCount();
+        
+        for (auto& t : threads) {
+            t.join();
+        }
+        
+        size_t activeFinal = DBConnection::getRedisPoolActiveCount();
+        size_t idleFinal = DBConnection::getRedisPoolIdleCount();
+        
+        res.statusCode = 200;
+        res.body = "{\"success\": true, "
+                   "\"message\": \"Redis压力测试完成\", "
+                   "\"redis\": { "
+                   "\"active_before\": " + std::to_string(activeBefore) + ", "
+                   "\"idle_before\": " + std::to_string(idleBefore) + ", "
+                   "\"active_during\": " + std::to_string(activeDuring) + ", "
+                   "\"idle_during\": " + std::to_string(idleDuring) + ", "
+                   "\"active_final\": " + std::to_string(activeFinal) + ", "
+                   "\"idle_final\": " + std::to_string(idleFinal) + "}, "
+                   "\"requests\": {"
+                   "\"success\": " + std::to_string(successCount.load()) + ", "
+                   "\"failed\": " + std::to_string(failCount.load()) + "},"
+                   "\"concurrency\": " + std::to_string(concurrency) + ", "
+                   "\"totalRequests\": " + std::to_string(totalRequests) + ", "
+                   "\"duration_ms\": " + std::to_string(duration) + "}";
+    } catch (const std::exception& e) {
+        res.statusCode = 500;
+        res.body = "{\"success\": false, \"message\": \"压力测试失败: " + std::string(e.what()) + "\"}";
     }
     
     return res;

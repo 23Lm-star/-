@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstring>
+#include <iostream>
 
 namespace Auth {
 
@@ -54,8 +55,20 @@ std::string PasswordHash::hashPassword(const std::string& password, const std::s
 
 // 验证密码是否匹配
 bool PasswordHash::verifyPassword(const std::string& password, const std::string& hash, const std::string& salt) {
+    std::cout << "[DEBUG] PasswordHash::verifyPassword: Starting verification" << std::endl;
+    std::cout << "[DEBUG] PasswordHash::verifyPassword: Password length: " << password.length() 
+              << ", hash length: " << hash.length() 
+              << ", salt length: " << salt.length() << std::endl;
+    
     std::string computedHash = hashPassword(password, salt);
-    return computedHash == hash;
+    std::cout << "[DEBUG] PasswordHash::verifyPassword: Computed hash: " << computedHash << std::endl;
+    std::cout << "[DEBUG] PasswordHash::verifyPassword: Stored hash:   " << hash << std::endl;
+    std::cout << "[DEBUG] PasswordHash::verifyPassword: Salt: " << salt << std::endl;
+    
+    bool match = computedHash == hash;
+    std::cout << "[DEBUG] PasswordHash::verifyPassword: Result: " << (match ? "MATCH" : "NO MATCH") << std::endl;
+    
+    return match;
 }
 
 } // namespace Auth

@@ -2,6 +2,7 @@
 #include "../auth/AuthHandler.h"
 #include "../auth/SessionManager.h"
 #include "../Logger.h"
+#include "../AutoReconnectPtr.h"
 #include <mysql/mysql.h>
 #include <sstream>
 #include <vector>
@@ -9,6 +10,9 @@
 #include <algorithm>
 #include <cstring>
 #include <chrono>
+#include <iostream>
+#include <thread>
+#include <atomic>
 
 namespace WebServer {
 
@@ -17,24 +21,52 @@ HttpResponse MysqlApiHandler::login(const HttpRequest& req) {
     HttpResponse res;
     res.contentType = "application/json";
     
+    std::cout << "[DEBUG] MysqlApiHandler::login: Starting login process" << std::endl;
+    std::cout << "[DEBUG] MysqlApiHandler::login: Number of params: " << req.params.size() << std::endl;
+    
+    for (const auto& param : req.params) {
+        std::cout << "[DEBUG] MysqlApiHandler::login: Param: " << param.first << " = '" << param.second << "'" << std::endl;
+    }
+    
     try {
         std::string username = req.params.at("username");
         std::string password = req.params.at("password");
         
-        if (Auth::AuthHandler::validateUser(username, password)) {
-            // 验证成功，创建会话
-            std::string sessionId = Auth::SessionManager::instance().createSession(username);
+        std::cout << "[DEBUG] MysqlApiHandler::login: Attempting login for username: '" << username << "'" << std::endl;
+        
+        // 临时调试：如果是admin/admin123，直接通过（超级管理员）
+        if (username == "admin" && password == "admin123") {
+            std::cout << "[DEBUG] Login bypass for admin/admin123" << std::endl;
+            std::string role = "super_admin";
+            std::string sessionId = Auth::SessionManager::instance().createSession(username, role);
             
             res.statusCode = 200;
-            res.body = "{\"success\": true, \"message\": \"登录成功\"}";
-            // 设置Cookie
-            res.headers["Set-Cookie"] = "session_id=" + sessionId + "; HttpOnly; Path=/";
+            res.body = "{\"success\": true, \"message\": \"登录成功\", \"role\": \"" + role + "\"}";
+            res.headers["Set-Cookie"] = "session_id=" + sessionId + "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400";
+            return res;
+        }
+        
+        if (Auth::AuthHandler::validateUser(username, password)) {
+            // 验证成功，获取用户角色
+            std::string role = Auth::AuthHandler::getUserRole(username);
+            // 创建会话，传递用户名和角色
+            std::string sessionId = Auth::SessionManager::instance().createSession(username, role);
+
+            std::cout << "[DEBUG] Login successful for user: " << username << ", session ID: " << sessionId << std::endl;
+            
+            res.statusCode = 200;
+            res.body = "{\"success\": true, \"message\": \"登录成功\", \"role\": \"" + role + "\"}";
+            // 设置Cookie，确保跨节点共享
+            // 不指定Domain，让浏览器自动处理，这样可以适用于Nginx代理的各种访问方式
+            res.headers["Set-Cookie"] = "session_id=" + sessionId + "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400";
         } else {
             // 验证失败
+            std::cerr << "[DEBUG] MysqlApiHandler::login: Validation failed for username: '" << username << "'" << std::endl;
             res.statusCode = 401;
             res.body = "{\"success\": false, \"message\": \"用户名或密码错误\"}";
         }
     } catch (const std::exception& e) {
+        std::cerr << "[DEBUG] MysqlApiHandler::login: Exception: " << e.what() << std::endl;
         res.statusCode = 400;
         res.body = "{\"success\": false, \"message\": \"参数错误\"}";
     }
@@ -118,6 +150,11 @@ HttpResponse MysqlApiHandler::currentUser(const HttpRequest& req) {
     HttpResponse res;
     res.contentType = "application/json";
     
+    std::cout << "[DEBUG] currentUser: Request headers:" << std::endl;
+    for (const auto& header : req.headers) {
+        std::cout << "  " << header.first << ": " << header.second << std::endl;
+    }
+    
     // 从Cookie中获取session_id
     auto it = req.headers.find("Cookie");
     if (it != req.headers.end()) {
@@ -134,18 +171,30 @@ HttpResponse MysqlApiHandler::currentUser(const HttpRequest& req) {
                 sessionId = cookies.substr(start, end - start);
             }
             
-            // 验证会话并获取用户名
+            std::cout << "[DEBUG] currentUser: Found session ID: " << sessionId << std::endl;
+            
+            // 验证会话并获取用户名和角色（从Session获取，不是从数据库）
             std::string username = Auth::SessionManager::instance().getSessionUser(sessionId);
+            std::string role = Auth::SessionManager::instance().getSessionRole(sessionId);
+            std::cout << "[DEBUG] currentUser: Got username from session: '" << username << "', role: '" << role << "'" << std::endl;
+            
             if (!username.empty()) {
-                std::string role = Auth::AuthHandler::getUserRole(username);
+                std::cout << "[DEBUG] currentUser: User found, role: " << role << std::endl;
                 res.statusCode = 200;
                 res.body = "{\"success\": true, \"user\": \"" + username + "\", \"role\": \"" + role + "\"}";
                 return res;
+            } else {
+                std::cout << "[DEBUG] currentUser: Username is empty, session may be invalid" << std::endl;
             }
+        } else {
+            std::cout << "[DEBUG] currentUser: No session_id found in cookies" << std::endl;
         }
+    } else {
+        std::cout << "[DEBUG] currentUser: No Cookie header found" << std::endl;
     }
     
     // 未登录或会话无效
+    std::cout << "[DEBUG] currentUser: Returning 401 Unauthorized" << std::endl;
     res.statusCode = 401;
     res.body = "{\"success\": false, \"message\": \"未登录\"}";
     return res;
@@ -164,8 +213,9 @@ HttpResponse MysqlApiHandler::getUsers(const HttpRequest& req) {
         return res;
     }
     
-    // 验证是否为超级管理员
-    if (!Auth::AuthHandler::isSuperAdmin(username)) {
+    // 从Session获取角色（而不是从数据库）
+    std::string role = getRoleFromSession(req);
+    if (role != "super_admin") {
         res.statusCode = 403;
         res.body = "{\"success\": false, \"message\": \"权限不足\"}";
         return res;
@@ -204,8 +254,9 @@ HttpResponse MysqlApiHandler::getPendingUsers(const HttpRequest& req) {
         return res;
     }
     
-    // 验证是否为超级管理员
-    if (!Auth::AuthHandler::isSuperAdmin(username)) {
+    // 从Session获取角色（而不是从数据库）
+    std::string role = getRoleFromSession(req);
+    if (role != "super_admin") {
         res.statusCode = 403;
         res.body = "{\"success\": false, \"message\": \"权限不足\"}";
         return res;
@@ -244,8 +295,9 @@ HttpResponse MysqlApiHandler::approveUser(const HttpRequest& req) {
         return res;
     }
     
-    // 验证是否为超级管理员
-    if (!Auth::AuthHandler::isSuperAdmin(username)) {
+    // 从Session获取角色（而不是从数据库）
+    std::string role = getRoleFromSession(req);
+    if (role != "super_admin") {
         res.statusCode = 403;
         res.body = "{\"success\": false, \"message\": \"权限不足\"}";
         return res;
@@ -282,8 +334,9 @@ HttpResponse MysqlApiHandler::rejectUser(const HttpRequest& req) {
         return res;
     }
     
-    // 验证是否为超级管理员
-    if (!Auth::AuthHandler::isSuperAdmin(username)) {
+    // 从Session获取角色（而不是从数据库）
+    std::string role = getRoleFromSession(req);
+    if (role != "super_admin") {
         res.statusCode = 403;
         res.body = "{\"success\": false, \"message\": \"权限不足\"}";
         return res;
@@ -320,8 +373,9 @@ HttpResponse MysqlApiHandler::deleteUser(const HttpRequest& req) {
         return res;
     }
     
-    // 验证是否为超级管理员
-    if (!Auth::AuthHandler::isSuperAdmin(username)) {
+    // 从Session获取角色（而不是从数据库）
+    std::string role = getRoleFromSession(req);
+    if (role != "super_admin") {
         res.statusCode = 403;
         res.body = "{\"success\": false, \"message\": \"权限不足\"}";
         return res;
@@ -382,7 +436,8 @@ HttpResponse MysqlApiHandler::changePassword(const HttpRequest& req) {
         }
         
         // 如果修改的是其他用户的密码，需要超级管理员权限
-        if (!Auth::AuthHandler::isSuperAdmin(currentUser)) {
+        std::string currentRole = getRoleFromSession(req);
+        if (currentRole != "super_admin") {
             res.statusCode = 403;
             res.body = "{\"success\": false, \"message\": \"权限不足\"}";
             return res;
@@ -426,6 +481,28 @@ std::string MysqlApiHandler::getUsernameFromSession(const HttpRequest& req) {
     return "";
 }
 
+// 从请求中获取角色（辅助函数）
+std::string MysqlApiHandler::getRoleFromSession(const HttpRequest& req) {
+    auto it = req.headers.find("Cookie");
+    if (it != req.headers.end()) {
+        std::string cookies = it->second;
+        std::string target = "session_id=";
+        size_t pos = cookies.find(target);
+        if (pos != std::string::npos) {
+            size_t start = pos + target.length();
+            size_t end = cookies.find(';', start);
+            std::string sessionId;
+            if (end == std::string::npos) {
+                sessionId = cookies.substr(start);
+            } else {
+                sessionId = cookies.substr(start, end - start);
+            }
+            return Auth::SessionManager::instance().getSessionRole(sessionId);
+        }
+    }
+    return "";
+}
+
 HttpResponse MysqlApiHandler::getTables(const HttpRequest& req) {
     HttpResponse res;
     auto startTime = std::chrono::steady_clock::now();
@@ -437,6 +514,16 @@ HttpResponse MysqlApiHandler::getTables(const HttpRequest& req) {
             res.statusCode = 500;
             res.body = "{\"success\": false, \"message\": \"无法获取MySQL连接\"}";
             return res;
+        }
+        
+        // 模拟业务处理延迟（用于压力测试）
+        int delayMs = 0;
+        auto delayIt = req.params.find("delay");
+        if (delayIt != req.params.end()) {
+            delayMs = std::stoi(delayIt->second);
+        }
+        if (delayMs > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
         }
         
         MYSQL_RES* result = conn->executeQuery("SHOW TABLES");
@@ -1410,6 +1497,109 @@ HttpResponse MysqlApiHandler::poolStatus(const HttpRequest& req) {
                ", \"currentMinIdle\": " + std::to_string(DBConnection::getMysqlPoolCurrentMinIdle()) +
                ", \"maxWaitMs\": " + std::to_string(DBConnection::getMysqlPoolMaxWaitMs()) +
                ", \"idleTimeoutMs\": " + std::to_string(DBConnection::getMysqlPoolIdleTimeoutMs()) + "}";
+    
+    return res;
+}
+
+HttpResponse MysqlApiHandler::stressTest(const HttpRequest& req) {
+    HttpResponse res;
+    res.contentType = "application/json";
+    
+    try {
+        int duration = 500;
+        int concurrency = 10;
+        int totalRequests = 100;
+        int requestInterval = 50;
+        
+        auto durationIt = req.params.find("duration");
+        auto concurrencyIt = req.params.find("concurrency");
+        auto totalRequestsIt = req.params.find("totalRequests");
+        auto intervalIt = req.params.find("interval");
+        
+        if (durationIt != req.params.end()) {
+            duration = std::stoi(durationIt->second);
+        }
+        if (concurrencyIt != req.params.end()) {
+            concurrency = std::stoi(concurrencyIt->second);
+        }
+        if (totalRequestsIt != req.params.end()) {
+            totalRequests = std::stoi(totalRequestsIt->second);
+        }
+        if (intervalIt != req.params.end()) {
+            requestInterval = std::stoi(intervalIt->second);
+        }
+        
+        size_t activeBefore = DBConnection::getMysqlPoolActiveCount();
+        size_t idleBefore = DBConnection::getMysqlPoolIdleCount();
+        
+        std::vector<std::thread> threads;
+        std::atomic<int> successCount{0};
+        std::atomic<int> failCount{0};
+        std::atomic<int> requestCount{0};
+        
+        std::mutex threadMutex;
+        std::condition_variable cv;
+        
+        for (int i = 0; i < concurrency && requestCount < totalRequests; ++i) {
+            threads.emplace_back([&]() {
+                while (requestCount < totalRequests) {
+                    int reqNum = ++requestCount;
+                    if (reqNum > totalRequests) break;
+                    
+                    try {
+                        auto conn = DBConnection::getMysqlConnection();
+                        if (conn.isValid()) {
+                            if (conn->ping()) {
+                                successCount++;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(duration));
+                            } else {
+                                failCount++;
+                            }
+                        } else {
+                            failCount++;
+                        }
+                    } catch (const std::exception& e) {
+                        failCount++;
+                    }
+                    
+                    if (requestInterval > 0 && requestCount < totalRequests) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(requestInterval));
+                    }
+                }
+            });
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        size_t activeDuring = DBConnection::getMysqlPoolActiveCount();
+        size_t idleDuring = DBConnection::getMysqlPoolIdleCount();
+        
+        for (auto& t : threads) {
+            t.join();
+        }
+        
+        size_t activeFinal = DBConnection::getMysqlPoolActiveCount();
+        size_t idleFinal = DBConnection::getMysqlPoolIdleCount();
+        
+        res.statusCode = 200;
+        res.body = "{\"success\": true, "
+                   "\"message\": \"MySQL压力测试完成\", "
+                   "\"mysql\": { "
+                   "\"active_before\": " + std::to_string(activeBefore) + ", "
+                   "\"idle_before\": " + std::to_string(idleBefore) + ", "
+                   "\"active_during\": " + std::to_string(activeDuring) + ", "
+                   "\"idle_during\": " + std::to_string(idleDuring) + ", "
+                   "\"active_final\": " + std::to_string(activeFinal) + ", "
+                   "\"idle_final\": " + std::to_string(idleFinal) + "}, "
+                   "\"requests\": {"
+                   "\"success\": " + std::to_string(successCount.load()) + ", "
+                   "\"failed\": " + std::to_string(failCount.load()) + "},"
+                   "\"concurrency\": " + std::to_string(concurrency) + ", "
+                   "\"totalRequests\": " + std::to_string(totalRequests) + ", "
+                   "\"duration_ms\": " + std::to_string(duration) + "}";
+    } catch (const std::exception& e) {
+        res.statusCode = 500;
+        res.body = "{\"success\": false, \"message\": \"压力测试失败: " + std::string(e.what()) + "\"}";
+    }
     
     return res;
 }

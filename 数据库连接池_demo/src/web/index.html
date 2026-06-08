@@ -509,6 +509,14 @@
         let currentTable = '';
         let currentEditData = null;
         let currentEditIndex = -1;
+
+        // 通用API请求函数，自动带上credentials
+        function apiFetch(url, options = {}) {
+            return fetch(url, {
+                ...options,
+                credentials: 'include'
+            });
+        }
         
         // MySQL保留关键字列表
         const MYSQL_RESERVED_KEYWORDS = [
@@ -907,7 +915,7 @@
         }
         
         function loadTables() {
-            fetch('/api/mysql/tables')
+            apiFetch('/api/mysql/tables')
                 .then(res => res.json())
                 .then(data => {
                     const list = document.getElementById('table-list');
@@ -941,7 +949,7 @@
         }
         
         function loadTableData(table) {
-            fetch(`/api/mysql/table?table=${encodeURIComponent(table)}`)
+            apiFetch(`/api/mysql/table?table=${encodeURIComponent(table)}`)
                 .then(res => res.json())
                 .then(data => {
                     const container = document.getElementById('table-data');
@@ -2503,7 +2511,7 @@
                   if (data.success) {
                       // 清除Cookie并跳转登录页
                       document.cookie = "session_id=; Path=/; Max-Age=0";
-                      window.location.href = 'http://172.22.136.134:8080/login.html';
+                      window.location.href = window.location.origin + '/login.html';
                   }
               });
         }
@@ -2511,31 +2519,80 @@
         // 获取当前登录用户
         // 打开监控页面（仅超级管理员可访问）
         function openMonitor() {
-            window.location.href = 'http://172.22.136.134:8080/monitor';
+            window.location.href = window.location.origin + '/monitor';
         }
         
         function fetchCurrentUser() {
+            // 先从localStorage获取缓存的用户信息
+            const cachedUser = localStorage.getItem('currentUser');
+            const cachedRole = localStorage.getItem('userRole');
+            
+            console.log('[INDEX] 检查localStorage缓存 - 用户:', cachedUser, '角色:', cachedRole);
+            
+            // 如果有缓存，先显示缓存信息
+            if (cachedUser) {
+                console.log('[INDEX] 从缓存读取用户信息');
+                document.getElementById('current-user').textContent = '👤 ' + cachedUser;
+                
+                const usersTab = document.getElementById('users-tab');
+                const monitorTab = document.getElementById('monitor-tab');
+                
+                console.log('[INDEX] 检查角色是否为super_admin:', cachedRole, '结果:', cachedRole === 'super_admin');
+                
+                if (cachedRole === 'super_admin') {
+                    console.log('[INDEX] 显示用户管理和监控标签');
+                    usersTab.style.display = 'block';
+                    monitorTab.style.display = 'block';
+                } else {
+                    console.log('[INDEX] 隐藏用户管理和监控标签（角色:', cachedRole, '）');
+                    usersTab.style.display = 'none';
+                    monitorTab.style.display = 'none';
+                }
+            } else {
+                console.log('[INDEX] localStorage中没有缓存用户信息');
+            }
+            
+            // 再尝试调用API获取最新信息
             fetch('/api/current-user', {
                 credentials: 'include'
             }).then(res => {
+                console.log('[INDEX] /api/current-user 返回状态:', res.status);
                 if (res.ok) {
                     return res.json();
-                } else {
-                    // 未登录，跳转到登录页
-                    window.location.href = 'http://172.22.136.134:8080/login.html';
+                } else if (res.status === 401 || res.status === 403) {
+                    // 只有明确的未授权状态才跳转
+                    console.warn('[INDEX] 会话无效或未登录，跳转登录页');
+                    localStorage.removeItem('currentUser');
+                    localStorage.removeItem('userRole');
+                    window.location.href = window.location.origin + '/login.html';
                     return null;
+                } else {
+                    // 其他错误（如500、网络问题）不跳转，仅记录日志
+                    console.error('[INDEX] 获取当前用户失败，状态码:', res.status);
+                    return { success: false, message: '获取用户信息失败' };
                 }
             }).then(data => {
+                console.log('[INDEX] /api/current-user 返回数据:', data);
                 if (data && data.success && data.user) {
+                    console.log('[INDEX] API返回用户信息 - 用户:', data.user, '角色:', data.role);
                     document.getElementById('current-user').textContent = '👤 ' + data.user;
+                    localStorage.setItem('currentUser', data.user);
+                    
+                    // 更新角色缓存
+                    if (data.role) {
+                        console.log('[INDEX] 更新localStorage角色:', data.role);
+                        localStorage.setItem('userRole', data.role);
+                    }
                     
                     // 只有超级管理员才能看到用户管理标签和监控标签
                     const usersTab = document.getElementById('users-tab');
                     const monitorTab = document.getElementById('monitor-tab');
                     if (data.role === 'super_admin') {
+                        console.log('[INDEX] API返回super_admin，显示用户管理和监控标签');
                         usersTab.style.display = 'block';
                         monitorTab.style.display = 'block';
                     } else {
+                        console.log('[INDEX] API返回非super_admin（', data.role, '），隐藏标签');
                         usersTab.style.display = 'none';
                         monitorTab.style.display = 'none';
                         // 如果当前在用户管理页面，切换到MySQL页面
@@ -2543,12 +2600,18 @@
                             switchTab('mysql');
                         }
                     }
-                } else if (data && !data.success) {
-                    window.location.href = 'http://172.22.136.134:8080/login.html';
+                } else if (data && !data.success && data.message === '未登录') {
+                    // 只有明确返回"未登录"才跳转
+                    console.warn('[INDEX] API返回未登录，清除缓存并跳转');
+                    localStorage.removeItem('currentUser');
+                    localStorage.removeItem('userRole');
+                    window.location.href = window.location.origin + '/login.html';
+                } else if (data) {
+                    console.log('[INDEX] API返回其他数据:', data);
                 }
-            }).catch(() => {
-                // 未登录或会话无效
-                window.location.href = 'http://172.22.136.134:8080/login.html';
+            }).catch((err) => {
+                // 网络错误不立即跳转，避免误判
+                console.error('[INDEX] 获取当前用户异常:', err);
             });
         }
         
@@ -2561,7 +2624,7 @@
         
         // 加载所有用户
         function loadAllUsers() {
-            fetch('http://172.22.136.134:8080/api/users', {
+            fetch(window.location.origin + '/api/users', {
                 credentials: 'include'
             }).then(res => res.json())
               .then(data => {
@@ -2575,7 +2638,7 @@
         
         // 加载待审批用户
         function loadPendingUsers() {
-            fetch('http://172.22.136.134:8080/api/users/pending', {
+            fetch(window.location.origin + '/api/users/pending', {
                 credentials: 'include'
             }).then(res => res.json())
               .then(data => {
@@ -2634,7 +2697,7 @@
         function approveUser(userId) {
             if (!confirm('确定要通过该用户的注册申请吗？')) return;
             
-            fetch('http://172.22.136.134:8080/api/users/approve', {
+            fetch(window.location.origin + '/api/users/approve', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -2654,7 +2717,7 @@
         function rejectUser(userId) {
             if (!confirm('确定要拒绝该用户的注册申请吗？')) return;
             
-            fetch('http://172.22.136.134:8080/api/users/reject', {
+            fetch(window.location.origin + '/api/users/reject', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -2674,7 +2737,7 @@
         function deleteUser(userId) {
             if (!confirm('确定要删除该用户吗？此操作不可恢复！')) return;
             
-            fetch(`http://172.22.136.134:8080/api/users?userId=${userId}`, {
+            fetch(window.location.origin + `/api/users?userId=${userId}`, {
                 method: 'DELETE',
                 credentials: 'include'
             }).then(res => res.json())
@@ -2720,7 +2783,7 @@
                 return;
             }
             
-            fetch('http://172.22.136.134:8080/api/users/password', {
+            fetch(window.location.origin + '/api/users/password', {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'

@@ -41,10 +41,12 @@ public:
     static HttpResponse modifyColumn(const HttpRequest& req);
     static HttpResponse poolStatus(const HttpRequest& req);
     static HttpResponse updatePoolConfig(const HttpRequest& req);
+    static HttpResponse stressTest(const HttpRequest& req);
     
 private:
     // 从请求中获取用户名（辅助函数）
     static std::string getUsernameFromSession(const HttpRequest& req);
+    static std::string getRoleFromSession(const HttpRequest& req);
     
     static std::string toJson(const std::vector<std::vector<std::string>>& data, 
                               const std::vector<std::string>& headers);

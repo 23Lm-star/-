@@ -4,6 +4,7 @@
 
 #include "ConnPool.h"
 #include "Timer.h"
+#include <iostream>
 
 template<typename T>
 ConnPool<T>::ConnPool(CreateFunc createFunc, DestroyFunc destroyFunc,
@@ -49,36 +50,49 @@ bool ConnPool<T>::init(int initSize, int minIdlePercent, int maxActive,
     m_maxWaitMs = maxWaitMs;
     m_idleTimeoutMs = idleTimeoutMs;
     
+    int successCount = 0;
     for (int i = 0; i < m_initSize; ++i) {
         T* conn = m_createFunc();
         if (conn && m_validateFunc(conn)) {
             m_idleConnections.push(conn);
+            ++successCount;
         } else {
             if (conn) {
                 m_destroyFunc(conn);
             }
+            std::cerr << "[ConnPool] init: connection #" << (i + 1)
+                      << " failed to create or validate, skipped." << std::endl;
         }
     }
+    
+    std::cout << "[ConnPool] init complete: " << successCount << "/" << m_initSize
+              << " connections created successfully." << std::endl;
     
     m_timer.reset(new Timer(timerIntervalMs, std::bind(&ConnPool<T>::timerCallback, this)));
     m_timer->start();
     m_isRunning.store(true);
     
-    return true;
+    return successCount > 0;  // 至少有一个连接创建成功才算 init 成功
 }
 
 template<typename T>
 std::unique_ptr<T, std::function<void(T*)>> ConnPool<T>::getConnection() {
     std::unique_lock<std::mutex> lock(m_mutex);
     
+    size_t idleBefore = m_idleConnections.size();
+    size_t activeBefore = m_activeConnections.size();
+    
     auto waitResult = m_cond.wait_for(lock, std::chrono::milliseconds(m_maxWaitMs),
         [this] { return !m_idleConnections.empty() || m_activeConnections.size() < static_cast<size_t>(m_maxActive); });
     
     if (!waitResult) {
+        std::cout << "[ConnPool] Get connection timeout! Active: " << m_activeConnections.size() 
+                  << ", Idle: " << m_idleConnections.size() << std::endl;
         return nullptr;
     }
     
     T* conn = nullptr;
+    bool isNewConnection = false;
     
     while (!m_idleConnections.empty()) {
         conn = m_idleConnections.front();
@@ -95,6 +109,7 @@ std::unique_ptr<T, std::function<void(T*)>> ConnPool<T>::getConnection() {
     if (!conn) {
         if (m_activeConnections.size() < static_cast<size_t>(m_maxActive)) {
             conn = m_createFunc();
+            isNewConnection = true;
             if (conn && !m_validateFunc(conn)) {
                 m_destroyFunc(conn);
                 conn = nullptr;
@@ -104,6 +119,16 @@ std::unique_ptr<T, std::function<void(T*)>> ConnPool<T>::getConnection() {
     
     if (conn) {
         m_activeConnections.insert(conn);
+        
+        if (isNewConnection) {
+            std::cout << "[ConnPool] Created new connection. Active: " 
+                      << activeBefore << " -> " << m_activeConnections.size() 
+                      << ", Idle: " << idleBefore << " -> " << m_idleConnections.size() << std::endl;
+        } else {
+            std::cout << "[ConnPool] Acquired from idle pool. Active: " 
+                      << activeBefore << " -> " << m_activeConnections.size() 
+                      << ", Idle: " << idleBefore << " -> " << m_idleConnections.size() << std::endl;
+        }
     }
     
     return std::unique_ptr<T, std::function<void(T*)>>(
@@ -120,13 +145,22 @@ void ConnPool<T>::returnConnection(T* conn) {
     
     std::lock_guard<std::mutex> lock(m_mutex);
     
+    size_t activeBefore = m_activeConnections.size();
+    size_t idleBefore = m_idleConnections.size();
+    
     m_activeConnections.erase(conn);
     
     if (m_validateFunc(conn)) {
         m_idleConnections.push(conn);
         m_cond.notify_one();
+        std::cout << "[ConnPool] Connection returned to idle pool. Active: " 
+                  << activeBefore-1 << " -> " << m_activeConnections.size() 
+                  << ", Idle: " << idleBefore << " -> " << m_idleConnections.size() << std::endl;
     } else {
         m_destroyFunc(conn);
+        std::cout << "[ConnPool] Connection destroyed (invalid). Active: " 
+                  << activeBefore-1 << " -> " << m_activeConnections.size() 
+                  << ", Idle remains: " << idleBefore << std::endl;
     }
 }
 

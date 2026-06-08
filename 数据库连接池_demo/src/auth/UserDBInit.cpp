@@ -14,6 +14,7 @@
 #include "DBConnection.h"
 #include "MysqlConn.h"
 #include <sstream>
+#include <cstring>
 
 namespace Auth {
 
@@ -50,31 +51,50 @@ bool UserDBInit::createTable() {
 
 // 创建默认超级管理员用户
 bool UserDBInit::createDefaultAdmin() {
+    std::cout << "[DEBUG] UserDBInit::createDefaultAdmin: Starting" << std::endl;
+    
     auto conn = DBConnection::getMysqlConnection();
     if (!conn.isValid()) {
+        std::cerr << "[DEBUG] UserDBInit::createDefaultAdmin: Database connection invalid!" << std::endl;
         return false;
     }
     
     // 检查admin用户是否已存在
-    std::string checkSql = "SELECT id FROM sys_users WHERE username = 'admin'";
+    std::string checkSql = "SELECT id, password_hash, salt, status FROM sys_users WHERE username = 'admin'";
     MYSQL_RES* result = conn->executeQuery(checkSql);
+    
     if (result) {
         MYSQL_ROW row = mysql_fetch_row(result);
-        mysql_free_result(result);
         if (row) {
-            // 用户已存在，无需创建
+            // 用户已存在，输出调试信息但不修改
+            std::cout << "[DEBUG] UserDBInit::createDefaultAdmin: Admin user already exists!" << std::endl;
+            if (row[0]) std::cout << "[DEBUG]   ID: " << row[0] << std::endl;
+            if (row[1]) std::cout << "[DEBUG]   Password hash length: " << std::string(row[1]).length() << std::endl;
+            if (row[2]) std::cout << "[DEBUG]   Salt length: " << std::string(row[2]).length() << std::endl;
+            if (row[3]) std::cout << "[DEBUG]   Status: " << row[3] << std::endl;
+            
+            mysql_free_result(result);
             return true;
         }
+        mysql_free_result(result);
     }
+    
+    std::cout << "[DEBUG] UserDBInit::createDefaultAdmin: Creating new admin user" << std::endl;
     
     // 创建默认管理员：admin / admin123
     std::string salt = PasswordHash::generateSalt(32);
     std::string passwordHash = PasswordHash::hashPassword("admin123", salt);
     
+    std::cout << "[DEBUG] UserDBInit::createDefaultAdmin: Generated salt: " << salt << std::endl;
+    std::cout << "[DEBUG] UserDBInit::createDefaultAdmin: Generated hash: " << passwordHash << std::endl;
+    
     std::string sql = "INSERT INTO sys_users (username, password_hash, salt, role, status) "
                       "VALUES ('admin', '" + passwordHash + "', '" + salt + "', 'super_admin', 'approved')";
     
-    return conn->executeInsert(sql);
+    bool success = conn->executeInsert(sql);
+    std::cout << "[DEBUG] UserDBInit::createDefaultAdmin: Insert result: " << (success ? "SUCCESS" : "FAILED") << std::endl;
+    
+    return success;
 }
 
 // 添加新用户（注册）
@@ -109,19 +129,27 @@ bool UserDBInit::addUser(const std::string& username, const std::string& passwor
 
 // 验证用户登录（检查密码和状态）
 bool UserDBInit::validateUser(const std::string& username, const std::string& password) {
+    std::cout << "[DEBUG] validateUser: Starting validation for username: '" << username << "'" << std::endl;
+    
     auto conn = DBConnection::getMysqlConnection();
     if (!conn.isValid()) {
+        std::cerr << "[DEBUG] validateUser: Database connection is invalid!" << std::endl;
         return false;
     }
+    std::cout << "[DEBUG] validateUser: Database connection OK" << std::endl;
     
     std::string sql = "SELECT password_hash, salt, status FROM sys_users WHERE username = '" + username + "'";
+    std::cout << "[DEBUG] validateUser: Executing SQL: " << sql << std::endl;
+    
     MYSQL_RES* result = conn->executeQuery(sql);
     if (!result) {
+        std::cerr << "[DEBUG] validateUser: Query returned nullptr!" << std::endl;
         return false;
     }
     
     MYSQL_ROW row = mysql_fetch_row(result);
     if (!row) {
+        std::cerr << "[DEBUG] validateUser: No user found for username: '" << username << "'" << std::endl;
         mysql_free_result(result);
         return false;
     }
@@ -130,15 +158,23 @@ bool UserDBInit::validateUser(const std::string& username, const std::string& pa
     std::string salt = row[1] ? row[1] : "";
     std::string status = row[2] ? row[2] : "";
     
+    std::cout << "[DEBUG] validateUser: Found user - password_hash length: " << passwordHash.length() 
+              << ", salt length: " << salt.length() 
+              << ", status: '" << status << "'" << std::endl;
+    
     mysql_free_result(result);
     
     // 检查用户状态是否为已批准
     if (status != "approved") {
+        std::cerr << "[DEBUG] validateUser: User status is not 'approved' but: '" << status << "'" << std::endl;
         return false;
     }
     
     // 验证密码
-    return PasswordHash::verifyPassword(password, passwordHash, salt);
+    bool passwordOk = PasswordHash::verifyPassword(password, passwordHash, salt);
+    std::cout << "[DEBUG] validateUser: Password verification result: " << (passwordOk ? "OK" : "FAILED") << std::endl;
+    
+    return passwordOk;
 }
 
 // 获取用户角色

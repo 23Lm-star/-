@@ -17,9 +17,9 @@ public:
     static HttpResponse del(const HttpRequest& req);
     static HttpResponse keys(const HttpRequest& req);
     static HttpResponse poolStatus(const HttpRequest& req);
-    static HttpResponse updatePoolConfig(const HttpRequest& req);
-};
-
+        static HttpResponse updatePoolConfig(const HttpRequest& req);
+        static HttpResponse stressTest(const HttpRequest& req);
+    };
 }
 
 #endif

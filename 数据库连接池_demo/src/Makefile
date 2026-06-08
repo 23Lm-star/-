@@ -29,7 +29,7 @@ INTERACTIVE_SRCS := interactive/Command.cpp interactive/MysqlCommandHandler.cpp 
                    MysqlConn.cpp RedisConn.cpp Timer.cpp Logger.cpp interactive_main.cpp
 INTERACTIVE_OBJS := $(INTERACTIVE_SRCS:.cpp=.o)
 
-WEB_SRCS := web/HttpServer.cpp web/MysqlApiHandler.cpp web/RedisApiHandler.cpp \
+WEB_SRCS := web/HttpServer.cpp web/MysqlApiHandler.cpp web/RedisApiHandler.cpp web/ClusterMonitor.cpp \
             auth/SessionManager.cpp auth/AuthHandler.cpp auth/UserDBInit.cpp auth/PasswordHash.cpp \
             MysqlConn.cpp RedisConn.cpp Timer.cpp Logger.cpp web_main.cpp
 WEB_OBJS := $(WEB_SRCS:.cpp=.o)
@@ -77,7 +77,9 @@ web/HttpServer.o: web/HttpServer.cpp web/HttpServer.h
 web/MysqlApiHandler.o: web/MysqlApiHandler.cpp web/MysqlApiHandler.h web/HttpServer.h DBConnection.h \
                        auth/SessionManager.h auth/AuthHandler.h
 web/RedisApiHandler.o: web/RedisApiHandler.cpp web/RedisApiHandler.h web/HttpServer.h DBConnection.h
-web_main.o: web_main.cpp DBConnection.h web/HttpServer.h web/MysqlApiHandler.h web/RedisApiHandler.h
+web/ClusterMonitor.o: web/ClusterMonitor.cpp web/ClusterMonitor.h DBConnection.h RedisConn.h
+web_main.o: web_main.cpp DBConnection.h web/HttpServer.h web/MysqlApiHandler.h web/RedisApiHandler.h \
+            web/ClusterMonitor.h
 
 # Auth模块的依赖
 auth/SessionManager.o: auth/SessionManager.cpp auth/SessionManager.h

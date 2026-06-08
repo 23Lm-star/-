@@ -1,4 +1,5 @@
 
+#include <iostream>
 #include "MysqlConn.h"
 
 MysqlConn::MysqlConn(const std::string& host, int port,
@@ -22,7 +23,8 @@ bool MysqlConn::connect() {
     }
     
     mysql_options(m_conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
-    mysql_options(m_conn, MYSQL_OPT_CONNECT_TIMEOUT, &m_port);
+    int timeout = 3;
+    mysql_options(m_conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
     
     const char* timezone = "Asia/Shanghai";
     mysql_options(m_conn, MYSQL_INIT_COMMAND, "SET time_zone = '+08:00'");
@@ -36,6 +38,7 @@ bool MysqlConn::connect() {
         updateLastUsedTime();
         return true;
     } else {
+        std::cerr << "[ERROR] MySQL connection failed: " << mysql_error(m_conn) << std::endl;
         m_isValid.store(false);
         mysql_close(m_conn);
         m_conn = nullptr;

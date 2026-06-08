@@ -218,18 +218,90 @@ bool RedisConn::ping() {
         return false;
     }
     
-    bool success = (reply->type == REDIS_REPLY_STRING && 
-                    std::string(reply->str, reply->len) == "PONG");
+    // Redis PING 返回的是 REDIS_REPLY_STATUS 类型，内容为 "PONG"
+    // 而不是 REDIS_REPLY_STRING，原来的判断永远为 false 导致所有连接验证失败
+    bool success = false;
+    if (reply->type == REDIS_REPLY_STATUS) {
+        success = (std::string(reply->str, reply->len) == "PONG");
+    } else if (reply->type == REDIS_REPLY_STRING) {
+        // 兼容某些 Redis 版本或代理返回 STRING 类型
+        success = (std::string(reply->str, reply->len) == "PONG");
+    }
     
     freeReplyObject(reply);
     
-    if (!success) {
-        m_isValid.store(false);
-    } else {
-        m_isValid.store(true);
+    m_isValid.store(success);
+    return success;
+}
+
+bool RedisConn::zadd(const std::string& key, const std::string& member, double score) {
+    if (!isValid()) {
+        return false;
     }
     
-    return success;
+    updateLastUsedTime();
+    
+    void* reply = redisCommand(m_conn, "ZADD %s %f %s", key.c_str(), score, member.c_str());
+    if (!reply) {
+        m_isValid.store(false);
+        return false;
+    }
+    
+    freeReplyObject(reply);
+    return true;
+}
+
+std::vector<std::pair<std::string, double>> RedisConn::zrange(const std::string& key, int start, int stop) {
+    std::vector<std::pair<std::string, double>> result;
+    
+    if (!isValid()) {
+        return result;
+    }
+    
+    updateLastUsedTime();
+    
+    redisReply* reply = reinterpret_cast<redisReply*>(redisCommand(m_conn, "ZRANGE %s %d %d WITHSCORES", key.c_str(), start, stop));
+    if (!reply) {
+        m_isValid.store(false);
+        return result;
+    }
+    
+    if (reply->type == REDIS_REPLY_ERROR) {
+        freeReplyObject(reply);
+        m_isValid.store(false);
+        return result;
+    }
+    
+    if (reply->type == REDIS_REPLY_ARRAY) {
+        for (size_t i = 0; i < reply->elements; i += 2) {
+            std::string member(reply->element[i]->str, reply->element[i]->len);
+            double score = 0;
+            if (i + 1 < reply->elements) {
+                score = std::atof(reply->element[i + 1]->str);
+            }
+            result.push_back({member, score});
+        }
+    }
+    
+    freeReplyObject(reply);
+    return result;
+}
+
+bool RedisConn::zrem(const std::string& key, const std::string& member) {
+    if (!isValid()) {
+        return false;
+    }
+    
+    updateLastUsedTime();
+    
+    void* reply = redisCommand(m_conn, "ZREM %s %s", key.c_str(), member.c_str());
+    if (!reply) {
+        m_isValid.store(false);
+        return false;
+    }
+    
+    freeReplyObject(reply);
+    return true;
 }
 
 void RedisConn::updateLastUsedTime() {
